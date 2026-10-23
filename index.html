@@ -1,1 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PokéSwap – local Pokémon buy, sell &amp; trade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d5dce3;--brand:#0f5c6e;--brand-d:#0a4553;--sell:#1d7a46;--trade:#b4570a;--want:#6a3fb5;--err:#b3261e;--r:10px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Figtree,system-ui,sans-serif}
+h1,h2,h3{font-family:'Bricolage Grotesque',Figtree,sans-serif;margin:0;line-height:1.15}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid #f2b705;outline-offset:2px}
+header{background:var(--ink);color:#fff;position:sticky;top:0;z-index:5}
+.bar{max-width:1080px;margin:auto;padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.logo{font:800 1.4rem 'Bricolage Grotesque';margin-right:auto;cursor:pointer;background:none;border:0;color:#fff;padding:0}
+.logo span{color:#f2b705}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+.nb{background:none;border:0;color:#cfd8e0;padding:8px 12px;border-radius:8px;cursor:pointer}
+.nb:hover,.nb.on{background:#25394a;color:#fff}
+.badge{background:#f2b705;color:#14202b;border-radius:99px;font-size:.75rem;padding:1px 7px;margin-left:4px;font-weight:700}
+main{max-width:1080px;margin:auto;padding:20px 16px 60px}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--brand-d)}.btn:disabled{opacity:.5;cursor:wait}
+.btn.ghost{background:none;color:var(--brand);border:1px solid var(--brand)}
+.btn.danger{background:var(--err)}.btn.sm{padding:6px 10px;font-size:.875rem}
+.filters{display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr;gap:8px;margin-bottom:16px}
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff}
+textarea{min-height:90px;resize:vertical}
+label{display:block;font-weight:600;font-size:.9rem;margin:12px 0 4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;text-align:left;padding:0}
+.card:hover{border-color:var(--brand)}
+.thumb{aspect-ratio:4/3;background:#dde4ea center/cover;display:grid;place-items:center;color:var(--mute);font-size:.85rem}
+.cb{padding:12px;display:flex;flex-direction:column;gap:4px}
+.cb h3{font-size:1.05rem}
+.price{font-weight:700}.meta{color:var(--mute);font-size:.875rem}
+.tag{display:inline-block;font-size:.78rem;font-weight:700;color:#fff;border-radius:6px;padding:2px 8px;width:max-content}
+.tag.sell{background:var(--sell)}.tag.trade{background:var(--trade)}.tag.want{background:var(--want)}.tag.closed{background:#7a8793}
+.panel{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:20px;max-width:560px;margin:auto}
+.empty{text-align:center;color:var(--mute);padding:48px 16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+dialog{border:0;border-radius:14px;padding:0;max-width:640px;width:calc(100% - 24px);box-shadow:0 20px 60px #0006}
+dialog::backdrop{background:#0008}
+.dlg{padding:20px}.dlg img{width:100%;max-height:340px;object-fit:contain;background:#dde4ea;border-radius:8px}
+.msg{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:10px}
+.msg.new{border-left:4px solid #f2b705}
+.err{color:var(--err);font-size:.9rem;min-height:1.2em;margin-top:8px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:20}
+.setup{max-width:640px;margin:48px auto;background:#fff;padding:24px;border-radius:var(--r);border:1px solid var(--line)}
+@media(max-width:700px){.filters{grid-template-columns:1fr 1fr}.filters input:first-child{grid-column:1/-1}.two{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <button class="logo" id="home">Poké<span>Swap</span></button>
+  <nav id="nav"></nav>
+</div></header>
+<main id="app"></main>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
 
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+
+/* ====== 1. CONFIGURE: paste your Supabase project values (Project Settings > API) ====== */
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+/* ======================================================================================= */
+
+const $ = s => document.querySelector(s);
+const app = $('#app'), nav = $('#nav'), dlg = $('#dlg');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const KIND = { sell: 'For sale', trade: 'For trade', want: 'Wanted' };
+const CAT = { single: 'Single card', sealed: 'Sealed product', accessory: 'Accessory', other: 'Other' };
+const COND = { M:'Mint', NM:'Near Mint', LP:'Lightly Played', MP:'Moderately Played', HP:'Heavily Played', DMG:'Damaged', Sealed:'Sealed' };
+const money = n => n == null ? '' : new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
+const ago = d => { const m = (Date.now() - new Date(d)) / 6e4; return m < 60 ? Math.max(1,Math.round(m)) + 'm ago' : m < 1440 ? Math.round(m/60) + 'h ago' : Math.round(m/1440) + 'd ago'; };
+function toast(t){ const e=$('#toast'); e.textContent=t; e.style.display='block'; clearTimeout(toast.t); toast.t=setTimeout(()=>e.style.display='none',3000); }
+
+if (SUPABASE_URL.startsWith('YOUR_')) {
+  app.innerHTML = `<div class="setup"><h2>Almost there</h2><p>Open <code>index.html</code>, paste your Supabase URL and anon key into the two constants near the top of the script, and run <code>schema.sql</code> in the Supabase SQL editor. The README has the full steps.</p></div>`;
+  throw new Error('Supabase not configured');
+}
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let user = null, profile = null, unread = 0, view = 'browse';
+const imgUrl = p => p ? sb.storage.from('listing-images').getPublicUrl(p).data.publicUrl : null;
+
+/* ---------- auth & nav ---------- */
+async function loadSession() {
+  const { data: { session } } = await sb.auth.getSession();
+  user = session?.user ?? null; profile = null; unread = 0;
+  if (user) {
+    const { data } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    profile = data;
+    const seen = Number(localStorage.getItem('seen_' + user.id) || 0);
+    const { count } = await sb.from('messages').select('id', { count: 'exact', head: true })
+      .eq('recipient_id', user.id).gt('created_at', new Date(seen).toISOString());
+    unread = count || 0;
+  }
+}
+function renderNav() {
+  const b = (v, t, x = '') => `<button class="nb ${view === v ? 'on' : ''}" data-v="${v}">${t}${x}</button>`;
+  nav.innerHTML = b('browse', 'Browse') + (user ? b('new', 'Post') + b('mine', 'My listings') +
+    b('inbox', 'Inbox', unread ? `<span class="badge">${unread}</span>` : '') + b('out', 'Sign out') : b('auth', 'Sign in'));
+}
+nav.onclick = e => { const v = e.target.closest('[data-v]')?.dataset.v; if (v) go(v); };
+$('#home').onclick = () => go('browse');
+async function go(v, arg) {
+  view = v; app.onclick = null; app.onsubmit = null; renderNav(); app.innerHTML = '<p class="empty">Loading…</p>';
+  if (v === 'out') { await sb.auth.signOut(); toast('Signed out'); return; }
+  if (['new', 'mine', 'inbox'].includes(v) && !user) return go('auth');
+  if (user && !profile && v !== 'profile' && v !== 'auth') return go('profile');
+  ({ browse: vBrowse, auth: vAuth, profile: vProfile, new: vForm, mine: vMine, inbox: vInbox }[v])(arg);
+}
+sb.auth.onAuthStateChange(async (ev) => { if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') { await loadSession(); go(user ? 'browse' : 'browse'); } });
+
+/* ---------- auth views ---------- */
+function vAuth() {
+  app.innerHTML = `<form class="panel" id="f"><h2>Sign in or create an account</h2>
+    <label for="em">Email</label><input id="em" type="email" required autocomplete="email">
+    <label for="pw">Password (6+ characters)</label><input id="pw" type="password" minlength="6" required autocomplete="current-password">
+    <div class="err" id="er" role="alert"></div>
+    <div class="row"><button class="btn" data-m="in">Sign in</button><button class="btn ghost" data-m="up" type="button">Create account</button></div></form>`;
+  const run = async mode => {
+    const f = { email: $('#em').value.trim(), password: $('#pw').value };
+    if (!f.email || f.password.length < 6) { $('#er').textContent = 'Enter an email and a password of 6+ characters.'; return; }
+    const { data, error } = mode === 'up' ? await sb.auth.signUp(f) : await sb.auth.signInWithPassword(f);
+    if (error) $('#er').textContent = error.message;
+    else if (mode === 'up' && !data.session) $('#er').textContent = 'Check your email to confirm your account, then sign in.';
+  };
+  $('#f').onsubmit = e => { e.preventDefault(); run('in'); };
+  $('[data-m=up]').onclick = () => run('up');
+}
+function vProfile() {
+  app.innerHTML = `<form class="panel" id="f"><h2>Set up your trader profile</h2>
+    <p class="meta">Other traders see your username and city.</p>
+    <label for="un">Username (3–24 characters)</label><input id="un" required minlength="3" maxlength="24">
+    <label for="ct">City or town</label><input id="ct" required maxlength="60" placeholder="Petoskey, MI">
+    <div class="err" id="er" role="alert"></div><button class="btn">Save profile</button></form>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const row = { id: user.id, username: $('#un').value.trim(), city: $('#ct').value.trim() };
+    const { error } = await sb.from('profiles').upsert(row);
+    if (error) { $('#er').textContent = /duplicate|unique/i.test(error.message) ? 'That username is taken.' : error.message; return; }
+    profile = row; toast('Profile saved'); go('browse');
+  };
+}
+
+/* ---------- browse ---------- */
+async function vBrowse() {
+  app.innerHTML = `<h2 style="margin-bottom:12px">Pokémon near you</h2>
+  <div class="filters"><input id="q" type="search" placeholder="Search cards, sets, products" aria-label="Search">
+  <input id="loc" placeholder="City or town" aria-label="City or town" value="${esc(profile?.city || '')}">
+  <select id="k" aria-label="Type"><option value="">All types</option><option value="sell">For sale</option><option value="trade">For trade</option><option value="want">Wanted</option></select>
+  <select id="c" aria-label="Category"><option value="">All categories</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+  <div id="res" class="grid"></div>`;
+  let t; const load = async () => {
+    let q = sb.from('listings').select('*, profiles(username, city)').eq('status', 'active').order('created_at', { ascending: false }).limit(60);
+    const v = id => $(id).value.trim().replace(/[%,()]/g, ' ');
+    if (v('#k')) q = q.eq('kind', v('#k')); if (v('#c')) q = q.eq('category', v('#c'));
+    if (v('#loc')) q = q.ilike('location', `%${v('#loc')}%`);
+    if (v('#q')) q = q.or(`title.ilike.%${v('#q')}%,description.ilike.%${v('#q')}%`);
+    const { data, error } = await q;
+    $('#res').innerHTML = error ? `<p class="empty">${esc(error.message)}</p>` : data.length ? data.map(card).join('') :
+      `<p class="empty" style="grid-column:1/-1">No listings match. Clear a filter or <a href="#" id="pl">post the first one</a>.</p>`;
+    $('#pl')?.addEventListener('click', e => { e.preventDefault(); go('new'); });
+    $('#res').onclick = e => { const id = e.target.closest('[data-id]')?.dataset.id; if (id) openListing(data.find(x => x.id === id)); };
+  };
+  app.querySelectorAll('input').forEach(i => i.oninput = () => { clearTimeout(t); t = setTimeout(load, 300); });
+  app.querySelectorAll('select').forEach(s => s.onchange = load);
+  load();
+}
+function card(l) {
+  const u = imgUrl(l.image_path);
+  return `<button class="card" data-id="${l.id}"><div class="thumb" ${u ? `style="background-image:url('${esc(u)}')"` : ''}>${u ? '' : 'No photo'}</div>
+  <div class="cb"><span class="tag ${l.kind}">${KIND[l.kind]}</span><h3>${esc(l.title)}</h3>
+  <span class="price">${l.kind === 'trade' ? 'Trade' : money(l.price) || 'Make an offer'}${l.condition ? ' · ' + esc(l.condition) : ''}</span>
+  <span class="meta">${esc(l.location)} · ${ago(l.created_at)}</span></div></button>`;
+}
+function openListing(l) {
+  const u = imgUrl(l.image_path), mine = user?.id === l.user_id;
+  dlg.innerHTML = `<div class="dlg"><div class="row" style="justify-content:space-between"><span class="tag ${l.kind}">${KIND[l.kind]}</span><button class="btn ghost sm" id="x">Close</button></div>
+  <h2 style="margin:10px 0">${esc(l.title)}</h2>${u ? `<img src="${esc(u)}" alt="${esc(l.title)}">` : ''}
+  <p><span class="price">${l.kind === 'trade' ? 'Open to trades' : money(l.price) || 'Make an offer'}</span>
+  ${l.condition ? ' · ' + COND[l.condition] : ''} · ${CAT[l.category]}</p>
+  <p class="meta">${esc(l.location)} · posted by ${esc(l.profiles?.username || 'trader')} ${ago(l.created_at)}</p>
+  <p style="white-space:pre-wrap">${esc(l.description || '')}</p><hr style="border:0;border-top:1px solid var(--line)">
+  ${mine ? '<p class="meta">This is your listing.</p>' : user ? `<form id="mf"><label for="mb">Message ${esc(l.profiles?.username || 'the seller')}</label>
+    <textarea id="mb" required maxlength="1000" placeholder="Hi! Is this still available? Where can we meet?"></textarea>
+    <div class="err" id="er" role="alert"></div><button class="btn">Send message</button></form>
+    <p class="meta">Meet in a public place and check cards in person before paying.</p>` : '<p><button class="btn" id="si">Sign in to message</button></p>'}</div>`;
+  dlg.showModal();
+  $('#x').onclick = () => dlg.close();
+  $('#si')?.addEventListener('click', () => { dlg.close(); go('auth'); });
+  $('#mf')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const { error } = await sb.from('messages').insert({ listing_id: l.id, sender_id: user.id, recipient_id: l.user_id, body: $('#mb').value.trim() });
+    if (error) $('#er').textContent = error.message; else { dlg.close(); toast('Message sent'); }
+  });
+}
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+/* ---------- create / edit ---------- */
+function vForm(existing) {
+  const l = existing && existing.id ? existing : {};
+  const opts = (o, sel) => Object.entries(o).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+  app.innerHTML = `<form class="panel" id="f"><h2>${l.id ? 'Edit listing' : 'Post a listing'}</h2>
+  <div class="two"><div><label for="kind">I want to</label><select id="kind">${opts({ sell: 'Sell', trade: 'Trade', want: 'Buy (wanted)' }, l.kind)}</select></div>
+  <div><label for="cat">Category</label><select id="cat">${opts(CAT, l.category)}</select></div></div>
+  <label for="ti">Title</label><input id="ti" required minlength="3" maxlength="100" value="${esc(l.title)}" placeholder="Charizard ex 199/165 – 151">
+  <div class="two"><div><label for="co">Condition</label><select id="co"><option value="">n/a</option>${opts(COND, l.condition)}</select></div>
+  <div id="pw"><label for="pr">Price (USD)</label><input id="pr" type="number" min="0" step="0.01" value="${l.price ?? ''}"></div></div>
+  <label for="lo">Meetup area</label><input id="lo" required maxlength="80" value="${esc(l.location || profile.city)}">
+  <label for="de">Details${''}</label><textarea id="de" maxlength="2000" placeholder="Set, card number, what you'd trade for, etc.">${esc(l.description)}</textarea>
+  <label for="im">Photo (optional, max 5 MB)</label><input id="im" type="file" accept="image/*">
+  <div class="err" id="er" role="alert"></div><div class="row"><button class="btn" id="sv">${l.id ? 'Save changes' : 'Publish listing'}</button></div></form>`;
+  const sync = () => $('#pw').style.display = $('#kind').value === 'trade' ? 'none' : '';
+  $('#kind').onchange = sync; sync();
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); $('#sv').disabled = true; $('#er').textContent = '';
+    try {
+      let image_path = l.image_path ?? null; const file = $('#im').files[0];
+      if (file) {
+        if (file.size > 5 * 1048576) throw new Error('Photo must be under 5 MB.');
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+        const up = await sb.storage.from('listing-images').upload(path, file, { contentType: file.type });
+        if (up.error) throw up.error;
+        if (image_path) await sb.storage.from('listing-images').remove([image_path]);
+        image_path = path;
+      }
+      const price = $('#kind').value === 'trade' || $('#pr').value === '' ? null : Number($('#pr').value);
+      const row = { kind: $('#kind').value, category: $('#cat').value, title: $('#ti').value.trim(), condition: $('#co').value || null,
+        price, location: $('#lo').value.trim(), description: $('#de').value.trim() || null, image_path };
+      const { error } = l.id ? await sb.from('listings').update(row).eq('id', l.id) : await sb.from('listings').insert({ ...row, user_id: user.id });
+      if (error) throw error;
+      toast(l.id ? 'Changes saved' : 'Listing published'); go('mine');
+    } catch (err) { $('#er').textContent = err.message; $('#sv').disabled = false; }
+  };
+}
+
+/* ---------- my listings ---------- */
+async function vMine() {
+  const { data, error } = await sb.from('listings').select('*, profiles(username, city)').eq('user_id', user.id).order('created_at', { ascending: false });
+  if (error) { app.innerHTML = `<p class="empty">${esc(error.message)}</p>`; return; }
+  app.innerHTML = `<h2 style="margin-bottom:12px">My listings</h2>` + (data.length ? `<div class="grid">${data.map(l => `<div>${card(l).replace('class="card"', 'class="card" style="width:100%"')}
+  <div class="row" style="margin-top:6px"><button class="btn ghost sm" data-a="edit" data-id="${l.id}">Edit</button>
+  <button class="btn ghost sm" data-a="tog" data-id="${l.id}">${l.status === 'active' ? 'Mark closed' : 'Reopen'}</button>
+  <button class="btn danger sm" data-a="del" data-id="${l.id}">Delete</button>${l.status === 'closed' ? '<span class="tag closed">Closed</span>' : ''}</div></div>`).join('')}</div>`
+    : `<p class="empty">You haven't posted anything yet. <a href="#" id="pl">Post your first listing</a>.</p>`);
+  $('#pl')?.addEventListener('click', e => { e.preventDefault(); go('new'); });
+  app.onclick = async e => {
+    const b = e.target.closest('[data-a]'), c = e.target.closest('.card');
+    if (c && !b) return openListing(data.find(x => x.id === c.dataset.id));
+    if (!b) return; const l = data.find(x => x.id === b.dataset.id);
+    if (b.dataset.a === 'edit') return vForm(l);
+    if (b.dataset.a === 'tog') { await sb.from('listings').update({ status: l.status === 'active' ? 'closed' : 'active' }).eq('id', l.id); return vMine(); }
+    if (b.dataset.a === 'del' && confirm('Delete this listing permanently?')) {
+      if (l.image_path) await sb.storage.from('listing-images').remove([l.image_path]);
+      await sb.from('listings').delete().eq('id', l.id); toast('Listing deleted'); vMine();
+    }
+  };
+}
+
+/* ---------- inbox ---------- */
+async function vInbox() {
+  const { data, error } = await sb.from('messages').select('*, listings(title), s:profiles!messages_sender_id_fkey(username), r:profiles!messages_recipient_id_fkey(username)')
+    .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`).order('created_at', { ascending: false }).limit(100);
+  if (error) { app.innerHTML = `<p class="empty">${esc(error.message)}</p>`; return; }
+  const seen = Number(localStorage.getItem('seen_' + user.id) || 0);
+  app.innerHTML = `<h2 style="margin-bottom:12px">Inbox</h2><div style="max-width:700px">` + (data.length ? data.map(m => {
+    const inc = m.recipient_id === user.id, other = inc ? m.sender_id : m.recipient_id;
+    return `<div class="msg ${inc && new Date(m.created_at) > seen ? 'new' : ''}"><div class="meta">${inc ? 'From ' + esc(m.s?.username) : 'To ' + esc(m.r?.username)} · re: ${esc(m.listings?.title)} · ${ago(m.created_at)}</div>
+    <p style="white-space:pre-wrap;margin:6px 0">${esc(m.body)}</p>
+    ${inc ? `<form data-l="${m.listing_id}" data-to="${other}"><div class="row"><input placeholder="Reply" required maxlength="1000" aria-label="Reply" style="flex:1"><button class="btn sm">Reply</button></div></form>` : ''}</div>`;
+  }).join('') : '<p class="empty">No messages yet. Questions about your listings will show up here.</p>') + '</div>';
+  localStorage.setItem('seen_' + user.id, Date.now()); unread = 0; renderNav();
+  app.onsubmit = async e => {
+    e.preventDefault(); const f = e.target, i = f.querySelector('input');
+    const { error } = await sb.from('messages').insert({ listing_id: f.dataset.l, sender_id: user.id, recipient_id: f.dataset.to, body: i.value.trim() });
+    if (error) toast(error.message); else { toast('Reply sent'); vInbox(); }
+  };
+}
+
+await loadSession(); go('browse');
+</script>
+</body>
+</html>
